@@ -22,7 +22,7 @@
       "extension_pages": "script-src 'self'; object-src 'self';"
    },
    "description": "One-click downloads from Facebook — videos, images, and post text from visible posts.",
-   "host_permissions": [ "https://api.github.com/*", "https://auth.serp.co/*", "https://facebook.com/*", "https://www.facebook.com/*", "https://m.facebook.com/*", "https://*.facebook.com/*", "https://*.fbcdn.net/*", "https://*.fbsbx.com/*", "https://*.cdninstagram.com/*" ],
+   "host_permissions": [ "https://api.github.com/*", "https://facebook.com/*", "https://www.facebook.com/*", "https://m.facebook.com/*", "https://*.facebook.com/*", "https://*.fbcdn.net/*", "https://*.fbsbx.com/*", "https://*.cdninstagram.com/*" ],
    "icons": {
       "128": "icons/icon128.png",
       "16": "icons/icon16.png",

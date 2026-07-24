@@ -5,24 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Video Downloader for Facebook</title>
     <style id="serp-auth-boot-css">
-      #activationSection,
-      .popup-shell > .header,
-      .popup-shell > #trialBanner,
-      .popup-shell > #mainContent,
-      .popup-shell > #status,
-      .popup-shell > .status {
-        display: none !important;
-      }
-      body[data-popup-state="auth"] #activationSection[data-serp-auth-ui="1"] { display: block !important; }
-      body[data-popup-state="ready"] .popup-shell > .header { display: flex !important; }
-      body[data-popup-state="ready"] .popup-shell > #mainContent:not(.hidden) { display: grid !important; }
-      body[data-popup-state="ready"] .popup-shell > #status:not(.hidden),
-      body[data-popup-state="ready"] .popup-shell > .status:not(.hidden) { display: block !important; }
-      body[data-popup-state="ready"] .popup-shell > #trialBanner:not(.hidden) { display: flex !important; }
-      body[data-popup-state="auth"] .popup-shell > #bootSplash,
-      body[data-popup-state="ready"] .popup-shell > #bootSplash {
-        display: none !important;
-      }
+      #activationSection { display: none !important; }
+      .popup-shell > .header { display: flex !important; }
+      .popup-shell > #mainContent:not(.hidden) { display: grid !important; }
+      .popup-shell > #status:not(.hidden),
+      .popup-shell > .status:not(.hidden) { display: block !important; }
+      .popup-shell > #bootSplash { display: none !important; }
+      .popup-shell > #trialBanner { display: none !important; }
     </style>
     <script src="site-config.js"></script>
     <link rel="stylesheet" href="styles/popup-enhanced.css" />
@@ -42,8 +31,6 @@
         </div>
         <button id="refreshBtn" class="ghost-btn" type="button">Rescan</button>
       </header>
-
-      <div id="trialBanner" class="trial-banner hidden"></div>
 
       <section id="activationSection" class="activation-section"></section>
 
