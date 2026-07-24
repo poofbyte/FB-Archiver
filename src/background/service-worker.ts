@@ -51,6 +51,14 @@ async function init(): Promise<void> {
     maxConcurrent: currentSettings.concurrentDownloads,
     maxRetries: currentSettings.retryCount,
     onUpdate: () => broadcastProgress(),
+    onComplete: () => {
+      progressTracker.addDownloaded(1);
+      broadcastProgress();
+    },
+    onFailed: () => {
+      progressTracker.addFailed(1);
+      broadcastProgress();
+    },
   });
   downloadQueue.init();
 
@@ -330,6 +338,14 @@ async function handleSettingsChanged(settings: Settings): Promise<MessageRespons
     maxConcurrent: settings.concurrentDownloads,
     maxRetries: settings.retryCount,
     onUpdate: () => broadcastProgress(),
+    onComplete: () => {
+      progressTracker.addDownloaded(1);
+      broadcastProgress();
+    },
+    onFailed: () => {
+      progressTracker.addFailed(1);
+      broadcastProgress();
+    },
   });
   downloadQueue.init();
 
@@ -337,16 +353,21 @@ async function handleSettingsChanged(settings: Settings): Promise<MessageRespons
   return { success: true };
 }
 
-function handleScanComplete(payload: {
+async function handleScanComplete(payload: {
   total: number;
   photos: number;
   videos: number;
   media: MediaItem[];
-}): MessageResponse {
+}): Promise<MessageResponse> {
+  // Save all discovered media to DB so downloads/ZIP can find them
+  if (payload.media && payload.media.length > 0) {
+    await db.addMediaBatch(payload.media);
+    logger.info(`Saved ${payload.media.length} media items to DB`);
+  }
+
   progressTracker.setFound(payload.total, payload.photos, payload.videos);
   progressTracker.setRunning(false);
 
-  // Notify popup
   broadcastProgress();
 
   return { success: true };

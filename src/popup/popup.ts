@@ -180,23 +180,26 @@ function pauseResume(): void {
 }
 
 async function startDownload(): Promise<void> {
-  if (mediaItems.length === 0) {
-    setStatus("error", "No media to download");
-    return;
-  }
-
   isDownloading = true;
   updateUI();
   setStatus("downloading", "Starting downloads...");
 
   try {
+    // Always send empty array — background fetches from DB for reliable source of truth
     const response = await chrome.runtime.sendMessage({
       action: "START_DOWNLOAD",
-      payload: mediaItems,
+      payload: [],
     });
 
     if (response?.success) {
-      setStatus("downloading", `Downloading ${response.data?.queued} items...`);
+      const count = response.data?.queued ?? 0;
+      if (count === 0) {
+        setStatus("error", "No undownloaded media found in database");
+        isDownloading = false;
+        updateUI();
+      } else {
+        setStatus("downloading", `Downloading ${count} items...`);
+      }
     } else {
       setStatus("error", response?.error || "Download failed");
       isDownloading = false;

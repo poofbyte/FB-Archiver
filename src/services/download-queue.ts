@@ -4,6 +4,8 @@ import { db } from "../storage/indexeddb";
 import { logger } from "../utils/logger";
 
 type QueueUpdateCallback = () => void;
+type DownloadCompleteCallback = (mediaId: string) => void;
+type DownloadFailedCallback = (mediaId: string, error: string) => void;
 
 /**
  * Download queue that manages the ordered processing of media items.
@@ -15,6 +17,8 @@ export class DownloadQueue {
   private isProcessing = false;
   private shouldPause = false;
   private onUpdate?: QueueUpdateCallback;
+  private onComplete?: DownloadCompleteCallback;
+  private onFailed?: DownloadFailedCallback;
   private totalQueued = 0;
   private totalCompleted = 0;
   private totalFailed = 0;
@@ -23,8 +27,12 @@ export class DownloadQueue {
     maxConcurrent?: number;
     maxRetries?: number;
     onUpdate?: QueueUpdateCallback;
+    onComplete?: DownloadCompleteCallback;
+    onFailed?: DownloadFailedCallback;
   }) {
     this.onUpdate = options?.onUpdate;
+    this.onComplete = options?.onComplete;
+    this.onFailed = options?.onFailed;
     this.manager = new DownloadManager({
       maxConcurrent: options?.maxConcurrent ?? 3,
       maxRetries: options?.maxRetries ?? 5,
@@ -241,13 +249,28 @@ export class DownloadQueue {
     this.onUpdate?.();
   }
 
-  private handleComplete(_item: DownloadItem): void {
+  private async handleComplete(item: DownloadItem): Promise<void> {
     this.totalCompleted++;
+
+    // Mark the corresponding media item as downloaded in DB
+    try {
+      const mediaItem = await db.getMedia(item.mediaId);
+      if (mediaItem) {
+        mediaItem.downloaded = true;
+        mediaItem.downloadPath = item.downloadPath;
+        await db.addMedia(mediaItem);
+      }
+    } catch (err) {
+      logger.error(`Failed to mark media as downloaded: ${item.mediaId}`, err);
+    }
+
+    this.onComplete?.(item.mediaId);
     this.onUpdate?.();
   }
 
-  private handleFailed(_item: DownloadItem, _error: string): void {
+  private handleFailed(item: DownloadItem, error: string): void {
     this.totalFailed++;
+    this.onFailed?.(item.mediaId, error);
     this.onUpdate?.();
   }
 
