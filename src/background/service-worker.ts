@@ -147,6 +147,9 @@ async function handleMessage(
     case "CLEAR_DATABASE":
       return handleClearDatabase();
 
+    case "PACKAGE_ZIP":
+      return handlePackageZip();
+
     case "SETTINGS_CHANGED":
       return handleSettingsChanged(message.payload as Settings);
 
@@ -309,6 +312,15 @@ async function handleClearDatabase(): Promise<MessageResponse> {
   return { success: true };
 }
 
+async function handlePackageZip(): Promise<MessageResponse> {
+  try {
+    await zipPackager.packageAll();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 async function handleSettingsChanged(settings: Settings): Promise<MessageResponse> {
   currentSettings = settings;
   await db.saveSettings(settings);
@@ -355,25 +367,7 @@ function handleMediaFound(payload: ProgressInfo): MessageResponse {
 async function packageZips(): Promise<void> {
   try {
     progressTracker.setDownloading(false);
-
-    const allMedia = await db.getAllMedia();
-    const downloaded = allMedia.filter((m) => m.downloaded);
-    const photos = downloaded.filter((m) => m.type === "photo");
-    const videos = downloaded.filter((m) => m.type === "video");
-
-    if (photos.length > 0) {
-      await zipPackager.createZip(photos, "photos");
-    }
-    if (videos.length > 0) {
-      await zipPackager.createZip(videos, "videos");
-    }
-
-    // Auto-export metadata
-    if (currentSettings.autoExport) {
-      const json = exportMetadata(downloaded, "json");
-      await downloadExport(json, "json");
-    }
-
+    await zipPackager.packageAll();
     broadcastProgress();
   } catch (err) {
     logger.error("ZIP packaging failed", err);

@@ -141,6 +141,7 @@ export type MessageAction =
   | "GET_MEDIA"
   | "EXPORT_METADATA"
   | "CLEAR_DATABASE"
+  | "PACKAGE_ZIP"
   | "SETTINGS_CHANGED"
   | "MEDIA_FOUND"
   | "DOWNLOAD_PROGRESS"

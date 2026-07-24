@@ -214,12 +214,11 @@ async function packageZip(): Promise<void> {
 
   try {
     const response = await chrome.runtime.sendMessage({
-      action: "START_DOWNLOAD",
-      payload: [],
+      action: "PACKAGE_ZIP",
     });
 
     if (response?.success) {
-      setStatus("downloading", "ZIP packaging in progress...");
+      setStatus("idle", "ZIP packaging started — check for download prompt");
     } else {
       setStatus("error", response?.error || "ZIP failed");
     }
