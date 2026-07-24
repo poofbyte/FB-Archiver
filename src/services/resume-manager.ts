@@ -32,15 +32,16 @@ export class ResumeManager {
    * Save the current session state.
    */
   async save(state: Partial<SessionState>): Promise<void> {
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
     const full: SessionState = {
-      lastPosition: state.lastPosition ?? window.scrollY,
+      lastPosition: state.lastPosition ?? scrollY,
       totalFound: state.totalFound ?? 0,
       totalDownloaded: state.totalDownloaded ?? 0,
       isRunning: state.isRunning ?? false,
       isPaused: state.isPaused ?? false,
       currentUrl: this.sessionUrl,
       startedAt: state.startedAt ?? Date.now(),
-      scrollPosition: state.scrollPosition ?? window.scrollY,
+      scrollPosition: state.scrollPosition ?? scrollY,
     };
 
     await db.saveSession(full);
@@ -67,7 +68,7 @@ export class ResumeManager {
    */
   async restoreScrollPosition(url: string): Promise<boolean> {
     const pos = await this.getScrollPosition(url);
-    if (pos > 0) {
+    if (pos > 0 && typeof window !== "undefined") {
       window.scrollTo(0, pos);
       logger.info(`ResumeManager: restored scroll position to ${pos}`);
       return true;

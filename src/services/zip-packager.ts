@@ -1,4 +1,6 @@
 import type { Settings } from "../types";
+import { db } from "../storage/indexeddb";
+import { exportMetadata, downloadExport } from "../utils/export";
 import { logger } from "../utils/logger";
 
 /**
@@ -49,8 +51,6 @@ export class ZipPackager {
     try {
       await this.ensureOffscreen();
 
-      // Import db here to avoid circular deps at module load time
-      const { db } = await import("../storage/indexeddb");
       const allMedia = await db.getAllMedia();
       const downloaded = allMedia.filter((m) => m.downloaded);
 
@@ -91,7 +91,6 @@ export class ZipPackager {
 
       // Auto-export metadata
       if (this.settings.autoExport) {
-        const { exportMetadata, downloadExport } = await import("../utils/export");
         const json = exportMetadata(downloaded, "json");
         await downloadExport(json, "json");
       }
