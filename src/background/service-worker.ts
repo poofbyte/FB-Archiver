@@ -20,6 +20,7 @@ let zipPackager: ZipPackager;
 const progressTracker = new ProgressTracker();
 const resumeManager = new ResumeManager();
 let currentTabId: number | null = null;
+let initReady: Promise<void> | null = null;
 let currentSettings: Settings = {
   scrollSpeed: 400,
   concurrentDownloads: 3,
@@ -423,6 +424,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 /* ── Lifecycle ─────────────────────────────────────────────────────────────── */
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  if (initReady) await initReady;
   if (details.reason === "install") {
     logger.info("Extension installed for the first time");
     await db.saveSettings(currentSettings);
@@ -432,6 +434,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 // Initialize
-init().catch((err) => {
+initReady = init().catch((err) => {
   logger.error("Failed to initialize background service worker", err);
 });
