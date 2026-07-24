@@ -1,6 +1,51 @@
 import type { MediaType, MediaVariant } from "../types";
 
 /**
+ * Try to upgrade a Facebook CDN image URL to the highest available quality.
+ *
+ * Facebook CDN URLs follow patterns like:
+ *   /v/t39.30808-6/{id}_n.jpg   (normal)
+ *   /v/t39.30808-6/{id}_s.jpg   (small)
+ *   /v/t39.30808-6/{id}_o.jpg   (original / full resolution)
+ *   /v/t39.30808-6/{id}.jpg     (no suffix = usually full)
+ *
+ * Strategy: try suffixes in quality order: _o, _n, original (no suffix).
+ * We return the best candidate URLs for the caller to verify.
+ */
+export function getFacebookQualityUrls(url: string): string[] {
+  const candidates: string[] = [url]; // always include original
+
+  try {
+    const u = new URL(url);
+
+    // Match CDN path pattern: .../{id}_{suffix}.{ext}
+    const pathMatch = u.pathname.match(/(\/v\/[^/]+\/[^/]+)_([a-z])\.(\w{3,4})$/);
+    if (!pathMatch) return candidates;
+
+    const [, base, _currentSuffix, ext] = pathMatch;
+
+    // Try higher quality suffixes first
+    const qualitySuffixes = ["o", "n", "p", "q"];
+    for (const suffix of qualitySuffixes) {
+      const newUrl = `${base}_${suffix}.${ext}${u.search}`;
+      if (newUrl !== url) {
+        candidates.push(newUrl);
+      }
+    }
+
+    // Also try without any suffix (sometimes the full image)
+    const noSuffixUrl = `${base}.${ext}${u.search}`;
+    if (!candidates.includes(noSuffixUrl)) {
+      candidates.push(noSuffixUrl);
+    }
+  } catch {
+    // Not a valid URL, return as-is
+  }
+
+  return candidates;
+}
+
+/**
  * Generate a stable fingerprint for a media item using its URL and dimensions.
  */
 export function generateFingerprint(url: string, width: number, height: number): string {
