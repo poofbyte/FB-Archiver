@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FB Media Archiver</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="4" fill="#1877f2"/>
+          <path d="M16.67 15.49l.55-3.58h-3.44v-2.32c0-.98.48-1.94 2.02-1.94h1.57V4.14s-1.42-.24-2.78-.24c-2.84 0-4.69 1.72-4.69 4.83v2.74H7.4v3.58h3.5V22h4.15v-6.51h3.1l.52-3.58z" fill="white"/>
+        </svg>
+        <h1>FB Media Archiver</h1>
+      </div>
+      <button id="settings-btn" class="icon-btn" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+      </button>
+    </header>
+
+    <!-- Status bar -->
+    <div class="status-bar" id="status-bar">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="status-text" id="status-text">Ready</span>
+    </div>
+
+    <!-- Page info -->
+    <div class="page-info" id="page-info">
+      <div class="page-url" id="page-url">Not on a Facebook page</div>
+      <div class="page-type" id="page-type"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total Found</div>
+      </div>
+      <div class="stat-card photo">
+        <div class="stat-value" id="stat-photos">0</div>
+        <div class="stat-label">Photos</div>
+      </div>
+      <div class="stat-card video">
+        <div class="stat-value" id="stat-videos">0</div>
+        <div class="stat-label">Videos</div>
+      </div>
+      <div class="stat-card success">
+        <div class="stat-value" id="stat-downloaded">0</div>
+        <div class="stat-label">Downloaded</div>
+      </div>
+      <div class="stat-card warning">
+        <div class="stat-value" id="stat-remaining">0</div>
+        <div class="stat-label">Remaining</div>
+      </div>
+      <div class="stat-card danger">
+        <div class="stat-value" id="stat-failed">0</div>
+        <div class="stat-label">Failed</div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-section" id="progress-section" style="display: none;">
+      <div class="progress-bar-container">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-info">
+        <span id="progress-percent">0%</span>
+        <span id="progress-eta"></span>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="actions">
+      <div class="action-row primary">
+        <button id="btn-scan" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          Start Scan
+        </button>
+      </div>
+
+      <div class="action-row" id="scan-controls" style="display: none;">
+        <button id="btn-pause" class="btn btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          Pause
+        </button>
+        <button id="btn-stop" class="btn btn-danger">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+          Stop
+        </button>
+      </div>
+
+      <div class="action-row" id="download-controls" style="display: none;">
+        <button id="btn-download" class="btn btn-success">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Download All
+        </button>
+        <button id="btn-zip" class="btn btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>
+          Package ZIP
+        </button>
+      </div>
+
+      <div class="action-row secondary">
+        <button id="btn-export" class="btn btn-outline">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
+          Export
+        </button>
+        <button id="btn-clear" class="btn btn-outline danger">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <!-- Download queue info -->
+    <div class="queue-info" id="queue-info" style="display: none;">
+      <h3>Download Queue</h3>
+      <div class="queue-stats">
+        <span>Queued: <strong id="queue-queued">0</strong></span>
+        <span>Active: <strong id="queue-active">0</strong></span>
+        <span>Done: <strong id="queue-done">0</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.ts" type="module"></script>
+</body>
+</html>
