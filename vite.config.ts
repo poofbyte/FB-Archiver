@@ -17,7 +17,7 @@ const manifest = {
   ],
   host_permissions: ["https://www.facebook.com/*", "https://*.facebook.com/*", "https://*.cdninstagram.com/*"],
   background: {
-    service_worker: "src/background/service-worker.ts",
+    service_worker: "src/background/service-worker.js",
     type: "module",
   },
   action: {
@@ -36,7 +36,7 @@ const manifest = {
   content_scripts: [
     {
       matches: ["https://www.facebook.com/*", "https://*.facebook.com/*"],
-      js: ["src/content/content-script.ts"],
+      js: ["src/content/content-script.js"],
       run_at: "document_idle",
     },
   ],
@@ -50,6 +50,7 @@ function copyIcons() {
 }
 
 export default defineConfig({
+  base: "",
   build: {
     outDir: "dist",
     emptyOutDir: true,
