@@ -119,13 +119,22 @@ export function selectBestVariant(variants: MediaVariant[]): MediaVariant | null
   if (variants.length === 0) return null;
 
   return variants.reduce((best, current) => {
-    const bestPixels = best.width * best.height;
-    const currentPixels = current.width * current.height;
-    if (currentPixels > bestPixels) return current;
-    if (currentPixels === bestPixels && current.quality && current.quality > (best.quality ?? 0))
-      return current;
+    const bestScore = variantScore(best);
+    const currentScore = variantScore(current);
+    if (currentScore > bestScore) return current;
     return best;
   });
+}
+
+function variantScore(v: MediaVariant): number {
+  // Use width if height is 0 (from srcset with width-only descriptors)
+  const w = v.width || 0;
+  const h = v.height || 0;
+  if (w > 0 && h === 0) {
+    // Width-only: treat width as a proxy for quality
+    return w * w; // Square it to heavily prefer larger widths
+  }
+  return w * h;
 }
 
 /**

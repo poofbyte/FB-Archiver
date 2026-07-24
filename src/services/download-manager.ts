@@ -184,7 +184,7 @@ export class DownloadManager {
   }
 
   /**
-   * Retry a failed download.
+   * Retry a failed download, cycling through fallback URLs from allVariants.
    */
   async retryDownload(item: DownloadItem): Promise<boolean> {
     if (item.retryCount >= this.maxRetries) {
@@ -196,6 +196,21 @@ export class DownloadManager {
     item.status = "queued";
     item.error = undefined;
     item.downloadId = undefined;
+
+    // Try next fallback URL from the media item's allVariants
+    try {
+      const mediaItem = await db.getMedia(item.mediaId);
+      if (mediaItem?.allVariants && mediaItem.allVariants.length > 1) {
+        const currentIdx = mediaItem.allVariants.findIndex((v) => v.url === item.url);
+        const nextIdx = currentIdx + 1;
+        if (nextIdx < mediaItem.allVariants.length) {
+          item.url = mediaItem.allVariants[nextIdx].url;
+          logger.info(`Trying fallback URL for ${item.filename}: variant ${nextIdx + 1}/${mediaItem.allVariants.length}`);
+        }
+      }
+    } catch {
+      // Ignore DB errors, retry with same URL
+    }
 
     // Exponential backoff delay
     const delay = Math.min(1000 * Math.pow(2, item.retryCount - 1), 30000);

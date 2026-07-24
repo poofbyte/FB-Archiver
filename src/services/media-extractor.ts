@@ -57,6 +57,12 @@ export class MediaExtractor {
     // Strategy 4: Parse all linked full-size images
     items.push(...this.extractFromLinks());
 
+    // Strategy 5: Performance API — find all image resources loaded by the page
+    items.push(...this.extractFromPerformanceApi());
+
+    // Strategy 6: Parse embedded JSON data from script tags (React/SSR data)
+    items.push(...this.extractFromPageData());
+
     return items;
   }
 
@@ -251,6 +257,128 @@ export class MediaExtractor {
 
         const item = this.buildVideoItem(href, 0, 0, undefined, undefined, source, album, [], thumbnailUrl);
 
+        if (item && !this.seenIds.has(item.id)) {
+          this.seenIds.add(item.id);
+          items.push(item);
+        }
+      }
+    }
+
+    return items;
+  }
+
+  /**
+   * Strategy 5: Use Performance API to find all image resources loaded by the page.
+   * Facebook may preload higher-quality versions that aren't in the DOM.
+   */
+  private extractFromPerformanceApi(): MediaItem[] {
+    const items: MediaItem[] = [];
+
+    try {
+      const entries = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+      const imageUrls = new Map<string, { width: number; height: number }>();
+
+      for (const entry of entries) {
+        if (!entry.initiatorType || entry.initiatorType !== "img") continue;
+        if (!this.isFacebookMediaUrl(entry.name)) continue;
+
+        // Skip tiny images (icons, spacers)
+        if (entry.transferSize > 0 && entry.transferSize < 1000) continue;
+
+        const url = entry.name.split("?")[0]; // strip query params for dedup
+
+        // Only keep the largest version of each base URL
+        if (!imageUrls.has(url)) {
+          imageUrls.set(url, { width: 0, height: 0 });
+        }
+      }
+
+      for (const [url, dims] of imageUrls) {
+        // Reconstruct full URL with original query params
+        const fullUrl = this.findFullPerformanceUrl(url);
+        if (!fullUrl) continue;
+
+        const source = "timeline";
+        const album = "Performance API";
+        const item = this.buildPhotoItem(fullUrl, dims.width, dims.height, source, album);
+
+        if (item && !this.seenIds.has(item.id)) {
+          this.seenIds.add(item.id);
+          items.push(item);
+        }
+      }
+    } catch {
+      // Performance API might not be available
+    }
+
+    return items;
+  }
+
+  private findFullPerformanceUrl(baseUrl: string): string | null {
+    try {
+      const entries = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+      for (const entry of entries) {
+        if (entry.name.startsWith(baseUrl) && this.isFacebookMediaUrl(entry.name)) {
+          return entry.name;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return baseUrl;
+  }
+
+  /**
+   * Strategy 6: Parse embedded JSON data from script tags.
+   * Facebook embeds photo data as JSON in the page's React/SSR output.
+   * Look for image URLs in script tags and data attributes.
+   */
+  private extractFromPageData(): MediaItem[] {
+    const items: MediaItem[] = [];
+
+    // Look for large image URLs in all script tags
+    const scripts = document.querySelectorAll("script");
+    for (const script of scripts) {
+      const text = script.textContent ?? "";
+      if (text.length < 100) continue;
+
+      // Extract Facebook CDN image URLs from JSON/text
+      const urlPattern = /https?:\/\/[^"'\s]*?(?:fbcdn\.net|facebook\.com)[^"'\s]*?\.(?:jpg|jpeg|png|webp)/gi;
+      const matches = text.match(urlPattern);
+      if (!matches) continue;
+
+      for (const url of matches) {
+        // Skip tiny/icon URLs
+        if (/\/s\d+x\d+\//.test(url)) continue;
+        if (/\/p\d+x\d+/.test(url)) continue;
+        if (/\/icon\//.test(url)) continue;
+        if (/\/avatar\//.test(url)) continue;
+
+        const cleanUrl = url.replace(/\\u0025/g, "%").replace(/\\\//g, "/");
+
+        const source = "timeline";
+        const album = "Page Data";
+        const item = this.buildPhotoItem(cleanUrl, 0, 0, source, album);
+
+        if (item && !this.seenIds.has(item.id)) {
+          this.seenIds.add(item.id);
+          items.push(item);
+        }
+      }
+    }
+
+    // Also look for image URLs in data attributes of script-like elements
+    const dataElements = document.querySelectorAll("[data-href], [data-store], [data-testid]");
+    for (const el of dataElements) {
+      for (const attr of Array.from(el.attributes)) {
+        if (!attr.value.includes("fbcdn.net")) continue;
+        const urlMatch = attr.value.match(/https?:\/\/[^"'\s]*?fbcdn\.net[^"'\s]*?\.(?:jpg|jpeg|png|webp)/i);
+        if (!urlMatch) continue;
+
+        const url = urlMatch[0];
+        if (/\/s\d+x\d+\//.test(url)) continue;
+
+        const item = this.buildPhotoItem(url, 0, 0, "timeline", "Page Data");
         if (item && !this.seenIds.has(item.id)) {
           this.seenIds.add(item.id);
           items.push(item);

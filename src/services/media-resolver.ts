@@ -12,9 +12,6 @@ import { logger } from "../utils/logger";
  * For videos: prefers HD/progressive MP4 streams.
  */
 export class MediaResolver {
-  /**
-   * Resolve a single media item to its best quality URL.
-   */
   async resolve(item: MediaItem): Promise<MediaItem> {
     if (item.type === "photo") {
       return this.resolvePhoto(item);
@@ -22,9 +19,6 @@ export class MediaResolver {
     return this.resolveVideo(item);
   }
 
-  /**
-   * Resolve a batch of media items in parallel batches.
-   */
   async resolveAll(items: MediaItem[]): Promise<MediaItem[]> {
     const resolved: MediaItem[] = [];
     const BATCH = 20;
@@ -33,10 +27,7 @@ export class MediaResolver {
       const batch = items.slice(i, i + BATCH);
       const results = await Promise.all(batch.map((item) => this.resolve(item)));
       resolved.push(...results);
-
-      if (i + BATCH < items.length) {
-        await this.sleep(50);
-      }
+      if (i + BATCH < items.length) await this.sleep(50);
     }
 
     logger.info(`MediaResolver: resolved ${items.length} items`);
@@ -44,12 +35,9 @@ export class MediaResolver {
   }
 
   /**
-   * For photos: try upgrading the CDN URL to original quality.
-   * Strategy:
-   * 1. Collect all variants from the DOM (src, srcset, data attrs)
-   * 2. For the best URL found, generate quality upgrade candidates (_o, _n, etc.)
-   * 3. Pick the highest-quality candidate (we verify during download via HEAD)
-   * 4. Return the upgraded URL as primary, original as fallback
+   * For photos: pick the best URL from all variants, then try to upgrade
+   * the CDN URL to original quality (_o suffix). The download manager
+   * handles failures via retry with fallback variants.
    */
   private async resolvePhoto(item: MediaItem): Promise<MediaItem> {
     const allVariants = [...(item.allVariants ?? [])];
@@ -62,31 +50,35 @@ export class MediaResolver {
       type: "photo",
     });
 
-    // Pick the best variant we already have
+    // Pick best from DOM variants
     const highQuality = allVariants.filter((v) => isHighQualityUrl(v.url));
     const baseVariant = selectBestVariant(highQuality.length > 0 ? highQuality : allVariants);
     const baseUrl = baseVariant?.url ?? item.url;
 
-    // Generate quality upgrade candidates for the best URL
+    // Generate quality upgrade candidates (_o = original)
     const qualityCandidates = getFacebookQualityUrls(baseUrl);
 
-    // Try to find the best working URL via HEAD requests (in parallel, with timeout)
-    const bestUrl = await this.findBestUrl(qualityCandidates, baseUrl);
+    // Pick the first (highest quality) candidate as primary URL
+    // Download manager retries with fallback variants if this fails
+    const bestUrl = qualityCandidates[0] ?? baseUrl;
 
-    // Also collect all unique URLs as variants for fallback
+    // Collect all unique URLs as fallback variants
     const finalVariants: MediaVariant[] = [];
     const seenUrls = new Set<string>();
-    for (const v of allVariants) {
-      if (!seenUrls.has(v.url)) {
-        seenUrls.add(v.url);
-        finalVariants.push(v);
-      }
-    }
-    // Add quality candidates as variants too
+
+    // Add quality candidates first (highest priority)
     for (const url of qualityCandidates) {
       if (!seenUrls.has(url)) {
         seenUrls.add(url);
         finalVariants.push({ url, width: 0, height: 0, type: "photo" });
+      }
+    }
+
+    // Then DOM variants
+    for (const v of allVariants) {
+      if (!seenUrls.has(v.url)) {
+        seenUrls.add(v.url);
+        finalVariants.push(v);
       }
     }
 
@@ -97,69 +89,9 @@ export class MediaResolver {
     };
   }
 
-  /**
-   * Try HEAD requests on candidate URLs and return the one with the largest content.
-   * Falls back to the original URL if all fail.
-   */
-  private async findBestUrl(candidates: string[], fallback: string): Promise<string> {
-    if (candidates.length <= 1) return candidates[0] ?? fallback;
-
-    // Try candidates in parallel with a short timeout
-    // First one that returns a large Content-Length wins
-    const results = await Promise.allSettled(
-      candidates.map(async (url) => {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 5000);
-
-          const response = await fetch(url, {
-            method: "HEAD",
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-
-          if (response.ok) {
-            const contentLength = parseInt(response.headers.get("content-length") ?? "0", 10);
-            const contentType = response.headers.get("content-type") ?? "";
-            // Must be an image
-            if (contentType.startsWith("image/")) {
-              return { url, contentLength };
-            }
-          }
-          return null;
-        } catch {
-          return null;
-        }
-      })
-    );
-
-    // Pick the candidate with the largest content-length
-    let bestUrl = fallback;
-    let bestSize = 0;
-
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value) {
-        if (result.value.contentLength > bestSize) {
-          bestSize = result.value.contentLength;
-          bestUrl = result.value.url;
-        }
-      }
-    }
-
-    if (bestUrl !== fallback && bestSize > 0) {
-      logger.debug(`MediaResolver: upgraded URL (${bestSize} bytes)`);
-    }
-
-    return bestUrl;
-  }
-
-  /**
-   * For videos: try to find HD or original quality stream.
-   */
   private async resolveVideo(item: MediaItem): Promise<MediaItem> {
     const candidates = [...(item.allVariants ?? [])];
 
-    // Add the primary URL
     candidates.push({
       url: item.url,
       width: item.width,
@@ -167,7 +99,6 @@ export class MediaResolver {
       type: "video",
     });
 
-    // Sort by quality preference
     const sorted = candidates.sort((a, b) => {
       return this.videoQualityScore(b) - this.videoQualityScore(a);
     });
