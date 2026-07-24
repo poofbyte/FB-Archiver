@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 import { writeFileSync, mkdirSync, cpSync, existsSync } from "fs";
+import { build as esbuild } from "esbuild";
 
 const manifest = {
   manifest_version: 3,
@@ -49,6 +50,32 @@ function copyIcons() {
   cpSync(src, dest, { recursive: true });
 }
 
+/**
+ * Build the content script as a self-contained bundle using esbuild.
+ * Chrome content scripts cannot use ES module imports, so all dependencies
+ * must be inlined into a single file.
+ */
+async function buildContentScript(): Promise<void> {
+  const entry = resolve(__dirname, "src/content/content-script.ts");
+  const outfile = resolve(__dirname, "dist/src/content/content-script.js");
+
+  await esbuild({
+    entryPoints: [entry],
+    bundle: true,
+    format: "iife",
+    outfile,
+    target: "esnext",
+    sourcemap: false,
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    alias: {
+      "@": resolve(__dirname, "src"),
+    },
+    logLevel: "info",
+  });
+}
+
 export default defineConfig({
   base: "",
   build: {
@@ -58,14 +85,13 @@ export default defineConfig({
     rollupOptions: {
       input: {
         "service-worker": resolve(__dirname, "src/background/service-worker.ts"),
-        "content-script": resolve(__dirname, "src/content/content-script.ts"),
+        // Content script excluded — built separately by esbuild as self-contained IIFE
         popup: resolve(__dirname, "src/popup/popup.html"),
         offscreen: resolve(__dirname, "src/background/offscreen.html"),
       },
       output: {
         entryFileNames: (chunkInfo) => {
           if (chunkInfo.name === "service-worker") return "src/background/service-worker.js";
-          if (chunkInfo.name === "content-script") return "src/content/content-script.js";
           if (chunkInfo.name === "offscreen") return "src/background/offscreen.js";
           return "assets/[name]-[hash].js";
         },
@@ -90,8 +116,11 @@ export default defineConfig({
   },
   plugins: [
     {
-      name: "write-manifest",
-      closeBundle() {
+      name: "write-manifest-and-content-script",
+      async closeBundle() {
+        // Build content script with esbuild (self-contained, no imports)
+        await buildContentScript();
+
         writeFileSync(
           resolve(__dirname, "dist/manifest.json"),
           JSON.stringify(manifest, null, 2)
