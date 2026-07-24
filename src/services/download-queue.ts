@@ -51,11 +51,21 @@ export class DownloadQueue {
   }
 
   /**
-   * Add media items to the download queue.
+   * Add media items to the download queue, skipping duplicates.
    */
   async enqueue(items: MediaItem[]): Promise<void> {
+    // Build a set of already-queued media IDs for dedup
+    const existingMediaIds = new Set(this.queue.map((q) => q.mediaId));
+    // Also check DB for completed/active downloads
+    const existingDownloads = await db.getAllDownloads();
+    for (const d of existingDownloads) {
+      if (d.status === "completed" || d.status === "downloading") {
+        existingMediaIds.add(d.mediaId);
+      }
+    }
+
     const downloadItems: DownloadItem[] = items
-      .filter((item) => !item.downloaded)
+      .filter((item) => !item.downloaded && !existingMediaIds.has(item.id))
       .map((item) => ({
         id: `dl_${item.id}`,
         mediaId: item.id,
@@ -65,6 +75,11 @@ export class DownloadQueue {
         progress: 0,
         retryCount: 0,
       }));
+
+    if (downloadItems.length === 0) {
+      logger.info("DownloadQueue: all items already queued or downloaded, skipping");
+      return;
+    }
 
     // Save to IndexedDB
     for (const dl of downloadItems) {
@@ -86,11 +101,11 @@ export class DownloadQueue {
     this.isProcessing = true;
     this.shouldPause = false;
 
-    // Load any pending downloads from DB
+    // Load any pending downloads from DB that aren't already in the queue
+    const existingIds = new Set(this.queue.map((q) => q.id));
     const pending = await db.getDownloadsByStatus("queued");
-    const pendingIds = new Set(this.queue.map((q) => q.id));
     for (const p of pending) {
-      if (!pendingIds.has(p.id)) {
+      if (!existingIds.has(p.id)) {
         this.queue.push(p);
       }
     }

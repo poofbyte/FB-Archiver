@@ -74,15 +74,15 @@ async function init(): Promise<void> {
 
   // Set up download completion listener for auto-zip
   progressTracker.onUpdate(async (info) => {
-    // When all downloads complete, trigger ZIP packaging
     if (
+      currentSettings.autoZip &&
       info.totalFound > 0 &&
       info.totalRemaining === 0 &&
       info.totalFailed === 0 &&
       info.totalDownloaded > 0 &&
       !info.isDownloading
     ) {
-      logger.info("All downloads complete, packaging ZIPs...");
+      logger.info("All downloads complete, auto-packaging ZIPs...");
       await packageZips();
     }
   });
@@ -355,13 +355,22 @@ function handleMediaFound(payload: ProgressInfo): MessageResponse {
 async function packageZips(): Promise<void> {
   try {
     progressTracker.setDownloading(false);
-    const result = await zipPackager.packageAll();
-    logger.info("ZIP packaging complete", result);
+
+    const allMedia = await db.getAllMedia();
+    const downloaded = allMedia.filter((m) => m.downloaded);
+    const photos = downloaded.filter((m) => m.type === "photo");
+    const videos = downloaded.filter((m) => m.type === "video");
+
+    if (photos.length > 0) {
+      await zipPackager.createZip(photos, "photos");
+    }
+    if (videos.length > 0) {
+      await zipPackager.createZip(videos, "videos");
+    }
 
     // Auto-export metadata
     if (currentSettings.autoExport) {
-      const media = await db.getAllMedia();
-      const json = exportMetadata(media, "json");
+      const json = exportMetadata(downloaded, "json");
       await downloadExport(json, "json");
     }
 

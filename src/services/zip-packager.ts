@@ -1,12 +1,10 @@
-import JSZip from "jszip";
 import type { MediaItem, Settings } from "../types";
-import { db } from "../storage/indexeddb";
 import { logger } from "../utils/logger";
 import { sanitizeFilename } from "../utils/url-parser";
 
 /**
  * Packages downloaded media files into ZIP archives.
- * Creates separate ZIPs for photos and videos.
+ * Uses offscreen document for Blob/URL APIs unavailable in MV3 service workers.
  */
 export class ZipPackager {
   private settings: Settings;
@@ -15,128 +13,112 @@ export class ZipPackager {
     this.settings = settings;
   }
 
-  /**
-   * Update settings.
-   */
   updateSettings(settings: Settings): void {
     this.settings = settings;
   }
 
   /**
-   * Create ZIP archives for all downloaded media.
+   * Ensure the offscreen document exists for ZIP creation.
    */
-  async packageAll(): Promise<{ photosZip?: string; videosZip?: string }> {
-    if (!this.settings.autoZip) {
-      logger.info("ZipPackager: auto-zip disabled");
-      return {};
+  private async ensureOffscreen(): Promise<void> {
+    try {
+      await chrome.offscreen.createDocument({
+        url: "src/background/offscreen.html",
+        reasons: [chrome.offscreen.Reason.WORKERS],
+        justification: "ZIP file creation requires Blob/URL APIs unavailable in service workers",
+      });
+    } catch {
+      // Already exists — that's fine
     }
-
-    const allMedia = await db.getAllMedia();
-    const downloaded = allMedia.filter((m) => m.downloaded);
-
-    if (downloaded.length === 0) {
-      logger.info("ZipPackager: no downloaded media to package");
-      return {};
-    }
-
-    const photos = downloaded.filter((m) => m.type === "photo");
-    const videos = downloaded.filter((m) => m.type === "video");
-
-    const result: { photosZip?: string; videosZip?: string } = {};
-
-    if (photos.length > 0) {
-      result.photosZip = await this.createZip(photos, "photos");
-    }
-
-    if (videos.length > 0) {
-      result.videosZip = await this.createZip(videos, "videos");
-    }
-
-    return result;
   }
 
   /**
-   * Create a ZIP from a list of media items.
+   * Fetch a single file with timeout and retry.
+   */
+  private async fetchWithRetry(url: string, retries = 2): Promise<ArrayBuffer | null> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(url, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+          logger.warn(`ZipPackager: HTTP ${response.status} for ${url.slice(0, 80)}...`);
+          if (attempt < retries) continue;
+          return null;
+        }
+
+        return await response.arrayBuffer();
+      } catch (err) {
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        logger.error(`ZipPackager: fetch failed after ${retries + 1} attempts`, String(err));
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Create a ZIP archive for given media items and trigger download.
+   * Fetches files in batches, then hands them to the offscreen document.
    */
   async createZip(items: MediaItem[], type: "photos" | "videos"): Promise<string> {
-    const zip = new JSZip();
     const suffix = type === "photos" ? this.settings.zipSuffixPhotos : this.settings.zipSuffixVideos;
 
-    // Organize by album
-    const byAlbum = new Map<string, MediaItem[]>();
-    for (const item of items) {
-      const album = item.album || "General";
-      if (!byAlbum.has(album)) byAlbum.set(album, []);
-      byAlbum.get(album)!.push(item);
-    }
+    const entries: { path: string; data: number[] }[] = [];
+    const BATCH_SIZE = 5;
 
-    // Add files to ZIP organized by album folders
-    let fileCount = 0;
-    for (const [album, albumItems] of byAlbum) {
-      const albumSlug = sanitizeFilename(album);
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (item, batchIdx) => {
+          const data = await this.fetchWithRetry(item.url);
+          if (!data) return null;
+          const albumSlug = sanitizeFilename(item.album || "General");
+          const filename = item.filename || `file_${i + batchIdx}`;
+          return { path: `${albumSlug}/${filename}`, data: Array.from(new Uint8Array(data)) };
+        })
+      );
 
-      for (const item of albumItems) {
-        try {
-          // Fetch the file data
-          const response = await fetch(item.url, { credentials: "include" });
-          if (!response.ok) {
-            logger.warn(`ZipPackager: failed to fetch ${item.url}: ${response.status}`);
-            continue;
-          }
-
-          const blob = await response.blob();
-          const data = await blob.arrayBuffer();
-
-          const filename = item.filename || `file_${fileCount}`;
-          const path = `${albumSlug}/${filename}`;
-          zip.file(path, data);
-          fileCount++;
-
-          // Progress logging every 10 files
-          if (fileCount % 10 === 0) {
-            logger.info(`ZipPackager: added ${fileCount} files to ${type} zip`);
-          }
-        } catch (err) {
-          logger.error(`ZipPackager: error adding ${item.filename} to zip`, err);
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value) {
+          entries.push(result.value);
         }
       }
+
+      logger.info(`ZipPackager: fetched ${Math.min(i + BATCH_SIZE, items.length)}/${items.length} for ${type}`);
+      await new Promise((r) => setTimeout(r, 10));
     }
 
-    if (fileCount === 0) {
-      logger.warn(`ZipPackager: no files added to ${type} zip`);
+    if (entries.length === 0) {
+      logger.warn(`ZipPackager: no files fetched for ${type} zip`);
       return "";
     }
-
-    // Generate the ZIP
-    logger.info(`ZipPackager: generating ${type} zip with ${fileCount} files...`);
-    const content = await zip.generateAsync(
-      {
-        type: "blob",
-        compression: "DEFLATE",
-        compressionOptions: { level: 6 },
-      },
-      (metadata) => {
-        logger.debug(`ZipPackager: ${type} zip progress: ${metadata.percent.toFixed(1)}%`);
-      }
-    );
-
-    // Trigger download
-    const zipName = `facebook_${type}${suffix}.zip`;
-    const url = URL.createObjectURL(content);
 
     try {
-      await chrome.downloads.download({
-        url,
-        filename: zipName,
-        saveAs: true,
+      await this.ensureOffscreen();
+
+      await chrome.runtime.sendMessage({
+        action: "CREATE_ZIP_AND_DOWNLOAD",
+        payload: {
+          entries,
+          zipName: `facebook_${type}${suffix}.zip`,
+        },
       });
-      logger.info(`ZipPackager: ${zipName} download initiated`);
-      return zipName;
+
+      logger.info(`ZipPackager: ${type} zip (${entries.length} files) sent to offscreen`);
+      return `facebook_${type}${suffix}.zip`;
     } catch (err) {
-      logger.error(`ZipPackager: failed to download ${zipName}`, err);
+      logger.error(`ZipPackager: failed to create ${type} zip`, err);
       return "";
-    } finally {
-      URL.revokeObjectURL(url);
     }
   }
 }
